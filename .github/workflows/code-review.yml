@@ -3,8 +3,6 @@ name: code-review
 on:
   workflow_call:
     secrets:
-      GITHUB_TOKEN:
-        required: true
       GEMINI_API_KEY:
         required: true
     inputs:
