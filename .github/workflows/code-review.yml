@@ -1,12 +1,17 @@
-name: Code Review
+name: code-review
 
 on:
-  pull_request:
-    types: [opened, synchronize]
-
-permissions:
-  contents: read
-  pull-requests: write
+  workflow_call:
+    secrets:
+      GITHUB_TOKEN:
+        required: true
+      GEMINI_API_KEY:
+        required: true
+    inputs:
+      pr_number:
+        description: "Pull Request 번호"
+        required: true
+        type: number
 
 jobs:
   review:
@@ -30,5 +35,5 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_NUMBER: ${{ inputs.pr_number }}
         run: python .github/scripts/code_review.py

@@ -1,11 +1,11 @@
-# .github/workflows 디렉토리 설명
+# .github 디렉토리 설명
 
-이 레포지토리에는 Issue template과 GitHub Actions 워크플로우 파일들이 저장되어 있으며, 코드 품질 관리 및 개발 프로세스 자동화를 위한 작업을 수행합니다. 다른 레포지토리에서 `uses: uitiorg/.github/.github/workflows/review-dog.yml@main` 와 같은 형태로 워크플로우를 불러 사용해 보세요. 현재 정의된 워크플로우는 다음과 같습니다:
+이 레포지토리에는 Issue Template과 GitHub Actions 워크플로우 파일들이 저장되어 있으며, 코드 품질 관리 및 개발 프로세스 자동화를 위한 작업을 수행합니다. 다른 레포지토리에서 `uses: uitiorg/.github/.github/workflows/review-dog.yml@main` 와 같은 형태로 워크플로우를 불러 사용해 보세요. 현재 정의된 워크플로우는 다음과 같습니다:
 
 ## 정의된 워크플로우
 
 *   **`code-review.yml`:**
-    *   **실행 시점:** 풀 리퀘스트(Pull Request) 생성 또는 업데이트 시.
+    *   **실행 시점:** 다른 워크플로우에서 호출 시 (`workflow_call`).
     *   **기능:** Google Gemini AI를 활용하여 변경된 코드에 대한 자동 코드 리뷰를 수행하고 결과를 풀 리퀘스트에 코멘트로 게시합니다. Python 스크립트(`.github/scripts/code_review.py`)를 통해 실제 리뷰 로직을 실행합니다.
     *   **목적:** 자동화된 AI 기반 코드 리뷰를 통해 코드 품질을 개선하고 리뷰 프로세스를 효율화합니다.
 
