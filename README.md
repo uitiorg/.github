@@ -8,6 +8,8 @@
     *   **실행 시점:** 다른 워크플로우에서 호출 시 (`workflow_call`).
     *   **기능:** Google Gemini AI를 활용하여 변경된 코드에 대한 자동 코드 리뷰를 수행하고 결과를 풀 리퀘스트에 코멘트로 게시합니다. Python 스크립트(`.github/scripts/code_review.py`)를 통해 실제 리뷰 로직을 실행합니다.
     *   **목적:** 자동화된 AI 기반 코드 리뷰를 통해 코드 품질을 개선하고 리뷰 프로세스를 효율화합니다.
+    *   **예시:** [데이터팀 활용 사례](https://github.com/uitiorg/ubuntu-crawler/blob/main/.github/workflows/code-review.yml)
+    *   **주의사항:** workflow를 사용하는 repo에서 [GEMINI_API_KEY](https://aistudio.google.com/apikey)를 발급받아야 합니다
 
 *   **`jacoco-rule.yml`:**
     *   **실행 시점:** 다른 워크플로우에서 호출 시 (`workflow_call`).
