@@ -1,0 +1,3 @@
+name: Auto Add Issues and PRs to Org Project
+description: Automatically adds new issues and pull requests to the organization project.
+iconName: octicon/project
