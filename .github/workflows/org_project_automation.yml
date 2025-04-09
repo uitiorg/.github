@@ -15,7 +15,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Add to Organization Project
-        uses: actions/add-to-project@v1
+        uses: actions/add-to-project@vlatest
         with:
           project-url: https://github.com/orgs/uitiorg/projects/2
           github-token: ${{ secrets.GITHUB_TOKEN }}
