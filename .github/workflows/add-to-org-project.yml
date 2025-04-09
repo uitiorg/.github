@@ -24,4 +24,4 @@ jobs:
         with:
           project-url: ${{ inputs.project-url }}
           # github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}        
+          github-token: ${{ secrets.ORG_WIDE_PROJECT_PAT }}        
