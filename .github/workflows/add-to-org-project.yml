@@ -6,6 +6,7 @@ on:
       project-url:
         required: false
         type: string
+        default: "https://github.com/orgs/uitiorg/projects/2"
     secrets:
       ADD_TO_PROJECT_PAT:
         required: false
@@ -21,5 +22,5 @@ jobs:
       - name: Add to Organization Project
         uses: actions/add-to-project@v1.0.2
         with:
-          project-url: https://github.com/orgs/uitiorg/projects/2
+          project-url: ${{ inputs.project-url }}
           github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
