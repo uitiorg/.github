@@ -17,6 +17,5 @@ jobs:
       - name: Add to Organization Project
         uses: actions/add-to-project@v1.0.2
         with:
-          project-url: https://github.com/orgs/uitiorg/projects/2
+          project-url: https://github.com/orgs/uitiorg/projects/7
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          item-id: ${{ github.event.issue.node_id || github.event.pull_request.node_id }}
