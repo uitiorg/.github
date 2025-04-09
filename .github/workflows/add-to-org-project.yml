@@ -23,5 +23,4 @@ jobs:
         uses: actions/add-to-project@v1.0.2
         with:
           project-url: ${{ inputs.project-url }}
-          # github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
-          github-token: ${{ secrets.ORG_PROJECT_PAT }}
+          github-token: ${{ secrets.ADD_TO_PROJECT_PAT }}
