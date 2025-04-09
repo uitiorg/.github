@@ -1,0 +1,22 @@
+name: Auto Add to Org Project
+
+on:
+  issues:
+    types: [opened]
+  pull_request:
+    types: [opened]
+
+jobs:
+  add_to_project:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Add to Organization Project
+        uses: actions/add-to-project@v1
+        with:
+          project-url: https://github.com/orgs/uitiorg/projects/2
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          item-id: ${{ github.event.issue.node_id || github.event.pull_request.node_id }}
