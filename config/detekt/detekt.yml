@@ -5,8 +5,6 @@ config:
   validation: true
   warningsAsErrors: false #경고도 전부 에러로 간주하여 빌드를 실패시킬지 여부를 결정
 
-excludes: '**/test/**' #테스트 코드 제외
-
 complexity: #코드 복잡도 분석 룰
   active: true #해당 룰을 사용할지 여부를 결정한다.
   TooManyFunctions: #함수 개수에 대한 코드 복잡도 분석 룰
