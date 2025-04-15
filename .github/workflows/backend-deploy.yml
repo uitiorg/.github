@@ -1,6 +1,14 @@
-name: Backend Deploy Workflow
+name: Org Deploy Workflow
 
 on:
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: '배포를 트리거할 브랜치 (예: main)'
+        required: true
+        default: 'main'
+  pull_request:
+    types: [closed]
   workflow_call:
     inputs:
       repo-name:
@@ -9,7 +17,9 @@ on:
       deploy-script:
         required: true
         type: string
-
+      target-branch:
+        required: false
+        type: string
     secrets:
       ACCESS_KEY:
         required: true
@@ -57,7 +67,7 @@ jobs:
         id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ inputs.repo-name }}
+          ECR_REPOSITORY: ${{ inputs.repo-name || secrets.REPO_NAME }}
           IMAGE_TAG: latest
         run: |
           DOCKER_BUILDKIT=1 docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
@@ -69,8 +79,32 @@ jobs:
     name: Deploy
     runs-on: [self-hosted, macOS, ARM64]
     # runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request' &&
+        github.event.pull_request.merged == true &&
+        github.event.pull_request.base.ref == 'main' &&
+        (
+          startsWith(github.event.pull_request.head.ref, 'release/') ||
+          startsWith(github.event.pull_request.head.ref, 'hotfix/')
+        )
+      ) ||
+      github.event_name == 'workflow_call'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Print Deploy Info
+        run: |
+          echo "Deploy triggered by: ${{ github.event_name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "Target branch: ${{ github.event.inputs.target_branch }}"
+          elif [ "${{ github.event_name }}" = "workflow_call" ]; then
+            echo "Target branch: ${{ inputs.target-branch }}"
+          else
+            echo "PR merged from: ${{ github.event.pull_request.head.ref }}"
+          fi
 
       - name: Copy Deploy Script
         uses: appleboy/scp-action@v0.1.7
@@ -79,7 +113,7 @@ jobs:
           username: ${{ secrets.INSTANCE_USERNAME }}
           key: ${{ secrets.INSTANCE_KEY }}
           port: ${{ secrets.SSH_PORT }}
-          source: ${{ inputs.deploy-script }}
+          source: ${{ inputs.deploy-script || 'deploy.sh' }}
           target: "/home/ec2-user/"
 
       - name: Connect Remote SSH And Execute Script
@@ -96,5 +130,5 @@ jobs:
             aws ecr get-login-password --region ap-northeast-2 | \
             docker login --username AWS --password-stdin \
             "$(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-northeast-2.amazonaws.com"
-            chmod +x ${{ inputs.deploy-script }}
-            ./$(basename ${{ inputs.deploy-script }})
+            chmod +x ${{ inputs.deploy-script || 'deploy.sh' }}
+            ./$(basename ${{ inputs.deploy-script || 'deploy.sh' }})
