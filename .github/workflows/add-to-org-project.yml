@@ -13,7 +13,8 @@ on:
 
 jobs:
   add_to_project:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64]
+    # runs-on: ubuntu-latest
     permissions:
       contents: write
       issues: write
