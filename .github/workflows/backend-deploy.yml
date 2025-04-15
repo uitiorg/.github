@@ -36,7 +36,7 @@ on:
 jobs:
   build:
     name: Build
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, macOS, ARM64, Primary]
     # runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -76,7 +76,7 @@ jobs:
   deploy:
     needs: build
     name: Deploy
-    runs-on: [self-hosted, macOS, ARM64]
+    runs-on: [self-hosted, macOS, ARM64, Primary]
     # runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' ||
