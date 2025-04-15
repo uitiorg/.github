@@ -37,7 +37,6 @@ jobs:
   build:
     name: Build
     runs-on: [self-hosted, macOS, ARM64, Primary]
-    # runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -69,15 +68,15 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.REPO_NAME }}
           IMAGE_TAG: latest
         run: |
-          DOCKER_BUILDKIT=1 docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          # 플랫폼 명시적 지정으로 ARM64 이미지 빌드
+          DOCKER_BUILDKIT=1 docker build --platform=linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-          echo "::set-output name=image::$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
   deploy:
     needs: build
     name: Deploy
     runs-on: [self-hosted, macOS, ARM64, Primary]
-    # runs-on: ubuntu-latest
     if: |
       github.event_name == 'workflow_dispatch' ||
       (
@@ -104,40 +103,31 @@ jobs:
           else
             echo "PR merged from: ${{ github.event.pull_request.head.ref }}"
           fi
-
-      # - name: Copy Deploy Script
-      #   uses: appleboy/scp-action@v0.1.7
-      #   with:
-      #     host: ${{ secrets.INSTANCE_IP }}
-      #     username: ${{ secrets.INSTANCE_USERNAME }}
-      #     key: ${{ secrets.INSTANCE_KEY }}
-      #     port: ${{ secrets.SSH_PORT }}
-      #     source: ${{ inputs.deploy-script || 'deploy.sh' }}
-      #     target: "/home/ec2-user/"
-
-      - name: Copy Deploy Script via SSH
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.INSTANCE_IP }}
-          username: ${{ secrets.INSTANCE_USERNAME }}
-          key: ${{ secrets.INSTANCE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            scp ${{ github.workspace }}/${{ inputs.deploy-script || 'deploy.sh' }} ${{ secrets.INSTANCE_USERNAME }}@${{ secrets.INSTANCE_IP }}:/home/ec2-user/      
-
-      - name: Connect Remote SSH And Execute Script
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.INSTANCE_IP }}
-          username: ${{ secrets.INSTANCE_USERNAME }}
-          key: ${{ secrets.INSTANCE_KEY }}
-          port: ${{ secrets.SSH_PORT }}
-          script: |
-            aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY }}
-            aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY }}
-            aws configure set default.region ap-northeast-2
-            aws ecr get-login-password --region ap-northeast-2 | \
-            docker login --username AWS --password-stdin \
-            "$(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-northeast-2.amazonaws.com"
-            chmod +x ${{ inputs.deploy-script || 'deploy.sh' }}
-            ./$(basename ${{ inputs.deploy-script || 'deploy.sh' }})
+          
+      # macOS 환경에서 작동하는 배포 방법 사용
+      - name: Deploy using macOS compatible commands
+        run: |
+          # SSH 키 파일 생성
+          echo "${{ secrets.INSTANCE_KEY }}" > deploy_key.pem
+          chmod 600 deploy_key.pem
+          
+          # 배포 스크립트 파일 원격 서버로 복사
+          scp -P ${{ secrets.SSH_PORT }} -i deploy_key.pem -o StrictHostKeyChecking=no \
+              ${{ inputs.deploy-script || 'deploy.sh' }} \
+              ${{ secrets.INSTANCE_USERNAME }}@${{ secrets.INSTANCE_IP }}:/home/ec2-user/
+          
+          # 원격 서버에서 배포 스크립트 실행
+          ssh -p ${{ secrets.SSH_PORT }} -i deploy_key.pem -o StrictHostKeyChecking=no \
+              ${{ secrets.INSTANCE_USERNAME }}@${{ secrets.INSTANCE_IP }} "
+                aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY }}
+                aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY }}
+                aws configure set default.region ap-northeast-2
+                aws ecr get-login-password --region ap-northeast-2 | \
+                docker login --username AWS --password-stdin \
+                \$(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-northeast-2.amazonaws.com
+                chmod +x ./$(basename ${{ inputs.deploy-script || 'deploy.sh' }})
+                ./$(basename ${{ inputs.deploy-script || 'deploy.sh' }})
+              "
+          
+          # 키 파일 정리
+          rm -f deploy_key.pem
