@@ -61,6 +61,22 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # 멀티 아키텍처 이미지 빌드 옵션
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # - name: Build and push multi-platform image
+      #   uses: docker/build-push-action@v5
+      #   with:
+      #     context: .
+      #     platforms: linux/amd64,linux/arm64
+      #     push: true
+      #     tags: ${{ steps.login-ecr.outputs.registry }}/${{ secrets.REPO_NAME }}:latest
+
+      # 또는 AMD64 전용 이미지 빌드 옵션 (위 멀티 아키텍처 빌드 대신 사용)
       - name: Build, tag, and push the image to Amazon ECR
         id: build-image
         env:
@@ -68,8 +84,8 @@ jobs:
           ECR_REPOSITORY: ${{ secrets.REPO_NAME }}
           IMAGE_TAG: latest
         run: |
-          # 플랫폼 명시적 지정으로 ARM64 이미지 빌드
-          DOCKER_BUILDKIT=1 docker build --platform=linux/arm64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          # 명시적으로 linux/amd64 플랫폼 지정 (EC2 인스턴스에 맞춤)
+          DOCKER_BUILDKIT=1 docker build --platform=linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
@@ -104,30 +120,30 @@ jobs:
             echo "PR merged from: ${{ github.event.pull_request.head.ref }}"
           fi
           
-      # macOS 환경에서 작동하는 배포 방법 사용
       - name: Deploy using macOS compatible commands
         run: |
-          # SSH 키 파일 생성
           echo "${{ secrets.INSTANCE_KEY }}" > deploy_key.pem
           chmod 600 deploy_key.pem
-          
+      
           # 배포 스크립트 파일 원격 서버로 복사
           scp -P ${{ secrets.SSH_PORT }} -i deploy_key.pem -o StrictHostKeyChecking=no \
-              ${{ inputs.deploy-script || 'deploy.sh' }} \
-              ${{ secrets.INSTANCE_USERNAME }}@${{ secrets.INSTANCE_IP }}:/home/ec2-user/
-          
+            ${{ inputs.deploy-script }} ${{ secrets.INSTANCE_USERNAME }}@${{ secrets.INSTANCE_IP }}:/home/ec2-user/
+      
+          # ss 명령어 관련 문제 해결을 위한 스크립트 수정
+          sed -i '' 's/ss -tuln/netstat -tuln/g' ${{ inputs.deploy-script }}
+      
           # 원격 서버에서 배포 스크립트 실행
           ssh -p ${{ secrets.SSH_PORT }} -i deploy_key.pem -o StrictHostKeyChecking=no \
-              ${{ secrets.INSTANCE_USERNAME }}@${{ secrets.INSTANCE_IP }} "
-                aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY }}
-                aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY }}
-                aws configure set default.region ap-northeast-2
-                aws ecr get-login-password --region ap-northeast-2 | \
-                docker login --username AWS --password-stdin \
-                \$(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-northeast-2.amazonaws.com
-                chmod +x ./$(basename ${{ inputs.deploy-script || 'deploy.sh' }})
-                ./$(basename ${{ inputs.deploy-script || 'deploy.sh' }})
-              "
-          
+            ${{ secrets.INSTANCE_USERNAME }}@${{ secrets.INSTANCE_IP }} "
+              aws configure set aws_access_key_id ${{ secrets.ACCESS_KEY }}
+              aws configure set aws_secret_access_key ${{ secrets.SECRET_KEY }}
+              aws configure set default.region ap-northeast-2
+              aws ecr get-login-password --region ap-northeast-2 | \
+              docker login --username AWS --password-stdin \
+              \$(aws sts get-caller-identity --query Account --output text).dkr.ecr.ap-northeast-2.amazonaws.com
+              chmod +x ./$(basename ${{ inputs.deploy-script }})
+              ./$(basename ${{ inputs.deploy-script }})
+            "
+      
           # 키 파일 정리
-          rm -f deploy_key.pem
+          rm -f deploy_key.pem          
