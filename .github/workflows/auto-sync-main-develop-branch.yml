@@ -25,6 +25,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Create PR to develop
+        id: cpr
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GH_TOKEN }}
@@ -33,4 +34,10 @@ jobs:
           title: "Sync `${{ env.SOURCE_BRANCH }}` → develop"
           body: |
             `${{ env.SOURCE_BRANCH }}` 브랜치가 `main`에 머지되었으므로 `develop`에도 반영합니다.
-          auto-merge: true
+
+      - name: Enable auto-merge for PR
+        uses: peter-evans/enable-pull-request-automerge@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
+          merge-method: merge
