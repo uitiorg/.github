@@ -24,9 +24,18 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Check for changes
+        id: changes
+        run: |
+          git fetch origin develop
+          git checkout develop
+          git merge --no-commit --no-ff ${{ env.SOURCE_BRANCH }} || true
+          git diff --quiet || echo "CHANGED=true" >> $GITHUB_ENV
+      
       - name: Create PR to develop
+        if: env.CHANGED == 'true'
         id: cpr
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v4
         with:
           token: ${{ secrets.GH_TOKEN }}
           base: develop
@@ -34,7 +43,6 @@ jobs:
           title: "Sync `${{ env.SOURCE_BRANCH }}` → develop"
           body: |
             `${{ env.SOURCE_BRANCH }}` 브랜치가 `main`에 머지되었으므로 `develop`에도 반영합니다.
-          path: "." # 이 옵션이 stash push/pop 방지에 도움됨
 
       - name: Enable auto-merge for PR
         uses: peter-evans/enable-pull-request-automerge@v2
