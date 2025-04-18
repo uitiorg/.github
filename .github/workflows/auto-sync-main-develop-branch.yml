@@ -2,51 +2,67 @@ name: Sync Main Merged Branch to Develop
 
 on:
   workflow_call:
-    secrets:
-      GH_TOKEN:
-        required: true
+    inputs:
+      main_branch:
+        description: '메인 브랜치 이름'
+        required: false
+        type: string
+        default: 'main'
+      develop_branch:
+        description: '개발 브랜치 이름'
+        required: false
+        type: string
+        default: 'develop'
+  pull_request:
+    types: [closed]
+    branches:
+      - ${{ github.event.inputs.main_branch || 'main' }}
 
 jobs:
-  sync-original-branch-to-develop:
+  sync:
+    if: >
+      github.event_name == 'workflow_call'
+      ||
+      (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
     runs-on: self-hosted
+
     steps:
-      - name: Extract source branch name
-        run: |
-          echo "SOURCE_BRANCH=${{ github.event.pull_request.head.ref }}" >> $GITHUB_ENV
-
-      - name: Checkout source branch
-        uses: actions/checkout@v3
+      - name: Checkout 코드
+        uses: actions/checkout@v4
         with:
-          ref: ${{ env.SOURCE_BRANCH }}
+          fetch-depth: 0
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Check for changes
-        id: changes
-        run: |
-          git fetch origin develop
-          git checkout develop
-          git merge --no-commit --no-ff ${{ env.SOURCE_BRANCH }} || true
-          git diff --quiet || echo "CHANGED=true" >> $GITHUB_ENV
-      
-      - name: Create PR to develop
-        if: env.CHANGED == 'true'
-        id: cpr
-        uses: peter-evans/create-pull-request@v4
+      - name: PR 생성 & 병합
+        uses: actions/github-script@v6
         with:
-          token: ${{ secrets.GH_TOKEN }}
-          base: develop
-          branch: ${{ env.SOURCE_BRANCH }}
-          title: "Sync `${{ env.SOURCE_BRANCH }}` → develop"
-          body: |
-            `${{ env.SOURCE_BRANCH }}` 브랜치가 `main`에 머지되었으므로 `develop`에도 반영합니다.
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const inputs     = github.event.inputs || {};
+            const mainBr     = inputs.main_branch || (github.event.pull_request?.base.ref) || 'main';
+            const developBr  = inputs.develop_branch || 'develop';
 
-      - name: Enable auto-merge for PR
-        uses: peter-evans/enable-pull-request-automerge@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          pull-request-number: ${{ steps.cpr.outputs.pull-request-number }}
-          merge-method: merge
+            // pull_request 이벤트인 경우 merged 여부 재확인
+            if (github.event_name === 'pull_request' && !github.event.pull_request.merged) {
+              console.log('PR이 merge되지 않아 스킵합니다.');
+              return;
+            }
+
+            // 1) develop 브랜치에 main 브랜치 동기용 PR 생성
+            const { data: pr } = await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Sync ${mainBr} → ${developBr} (${context.sha.substring(0,7)})`,
+              head: mainBr,
+              base: developBr,
+              body: `자동 동기화: ${mainBr} 커밋 ${context.sha}를 ${developBr}에 반영합니다.`
+            });
+
+            // 2) 생성된 PR 자동 Merge
+            await github.rest.pulls.merge({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              merge_method: 'merge'
+            });
+
+            console.log(`PR #${pr.number}이 ${developBr}에 merge되었습니다.`);
