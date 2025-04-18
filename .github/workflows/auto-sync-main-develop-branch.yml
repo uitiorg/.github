@@ -24,7 +24,7 @@ jobs:
       github.event_name == 'workflow_call'
       ||
       (github.event_name == 'pull_request' && github.event.pull_request.merged == true)
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout 코드
@@ -38,31 +38,50 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const inputs     = github.event.inputs || {};
-            const mainBr     = inputs.main_branch || (github.event.pull_request?.base.ref) || 'main';
-            const developBr  = inputs.develop_branch || 'develop';
+            const mainBr     = inputs.main_branch   || github.event.pull_request.base.ref;
+            const developBr  = inputs.develop_branch|| 'develop';
+            let pr;
 
-            // pull_request 이벤트인 경우 merged 여부 재확인
-            if (github.event_name === 'pull_request' && !github.event.pull_request.merged) {
-              console.log('PR이 merge되지 않아 스킵합니다.');
-              return;
+            // 1) PR 생성 시도
+            try {
+              const result = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                title: `Sync ${mainBr} → ${developBr} (${context.sha.slice(0,7)})`,
+                head:  mainBr,
+                base:  developBr,
+                body:  `자동 동기화: ${mainBr} @ ${context.sha}`
+              });
+              pr = result.data;
+            } catch (e) {
+              // 차이가 없으면 워크플로 성공으로 종료
+              if (e.status === 422 && e.message.includes('no_commits_between')) {
+                console.log('두 브랜치에 차이가 없어 동기화가 필요 없습니다.');
+                return;
+              }
+              throw e;
             }
 
-            // 1) develop 브랜치에 main 브랜치 동기용 PR 생성
-            const { data: pr } = await github.rest.pulls.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title: `Sync ${mainBr} → ${developBr} (${context.sha.substring(0,7)})`,
-              head: mainBr,
-              base: developBr,
-              body: `자동 동기화: ${mainBr} 커밋 ${context.sha}를 ${developBr}에 반영합니다.`
-            });
-
-            // 2) 생성된 PR 자동 Merge
-            await github.rest.pulls.merge({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number,
-              merge_method: 'merge'
-            });
-
-            console.log(`PR #${pr.number}이 ${developBr}에 merge되었습니다.`);
+            // 2) PR 자동 머지 시도
+            try {
+              await github.rest.pulls.merge({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                pull_number: pr.number,
+                merge_method: 'merge'
+              });
+              console.log(`PR #${pr.number} 이 ${developBr}에 자동 머지되었습니다.`);
+            } catch (e) {
+              // 충돌 발생 시 알림만 남기고 성공 처리
+              if ((e.status === 405 || e.status === 409) && e.message.includes('Merge conflict')) {
+                console.log('충돌로 자동 머지가 실패했습니다. 수동으로 해결해주세요.');
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr.number,
+                  body:  `자동 머지 중 충돌이 발생했습니다. 브랜치 간 충돌을 수동으로 해결해 주세요.`
+                });
+                return;
+              }
+              throw e;
+            }
