@@ -14,7 +14,7 @@ on:
         type: string
         default: 'develop'
     secrets:
-      GH_TOKEN:
+      GITHUB_TOKEN:
         description: 'GitHub Token for API calls'
         required: true
 
