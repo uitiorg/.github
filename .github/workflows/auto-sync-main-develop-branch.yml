@@ -13,6 +13,10 @@ on:
         required: false
         type: string
         default: 'develop'
+    secrets:
+      GITHUB_TOKEN:
+        description: 'GitHub Token for API calls'
+        required: true
 
 jobs:
   sync:
