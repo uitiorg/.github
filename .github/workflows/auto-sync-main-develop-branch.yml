@@ -14,7 +14,7 @@ on:
         type: string
         default: 'develop'
     secrets:
-      GITHUB_TOKEN:
+      GH_TOKEN:
         description: 'GitHub Token for API calls'
         required: true
 
@@ -30,7 +30,7 @@ jobs:
       - name: PR 생성 & 병합
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_TOKEN }}
           script: |
             const inputs     = github.event.inputs || {};
             const mainBr     = inputs.main_branch   || github.event.pull_request.base.ref;
