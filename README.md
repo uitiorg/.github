@@ -20,3 +20,32 @@
     *   **실행 시점:** 다른 워크플로우에서 호출 시 (`workflow_call`).
     *   **기능:** Gradle 프로젝트에서 Detekt를 사용하여 Kotlin 코드에 대한 정적 분석을 수행하고, Reviewdog을 통해 발견된 문제점들을 풀 리퀘스트에 리뷰 코멘트로 게시합니다.
     *   **목적:** Kotlin 코드의 잠재적 오류, 스타일 위반 등을 자동으로 검사하고 개발자가 풀 리퀘스트에서 바로 확인할 수 있도록 하여 코드 품질을 향상시키는 재사용 가능한 워크플로우입니다.
+ 
+* **`auto-add-to-project.yml`:**
+
+    * 실행 시점: 다른 워크플로우에서 호출 시 (workflow_call).
+    * 기능: 이슈 또는 풀 리퀘스트가 생성될 때, 지정된 Organization 프로젝트에 자동으로 추가합니다. 프로젝트 URL은 입력 파라미터로 설정 가능하며, 기본값은 https://github.com/orgs/uitiorg/projects/2 입니다.
+    * 목적: 새로운 이슈나 풀 리퀘스트를 프로젝트 보드에 수동으로 추가하는 번거로움을 줄여 개발 및 관리 프로세스를 효율화합니다.
+    * 사용 방법: 워크플로우를 호출하는 YAML 파일의 jobs.<job_id>.steps.uses 아래 with 구문을 사용하여 project-url을 필요에 따라 설정할 수 있습니다. Organization 프로젝트에 접근하기 위한 ADD_TO_PROJECT_PAT 시크릿 토큰이 필요할 수 있습니다.
+ 
+* **`sync-main-to-develop.yml`:**
+
+    * 실행 시점: 다른 워크플로우에서 호출 시 (workflow_call).
+    * 기능: main 브랜치의 변경 사항을 자동으로 develop 브랜치에 동기화합니다. main_branch와 develop_branch 인풋을 통해 동기화할 브랜치 이름을 유연하게 설정할 수 있습니다.
+    * 목적: main 브랜치에 병합된 최신 코드를 개발 브랜치에 자동으로 반영하여 개발 환경을 최신 상태로 유지하고 브랜치 간의 격차를 줄입니다.
+    * 사용 방법: 워크플로우를 호출할 때 필요한 경우 main_branch와 develop_branch 인풋 값을 설정할 수 있습니다. API 호출을 위해 GITHUB_TOKEN 시크릿이 필요합니다. 충돌이 발생할 경우 풀 리퀘스트를 생성하고 코멘트를 남기지만, 자동으로 병합하지는 않습니다.
+ 
+* **`org-deploy.yml`:**
+
+    * 실행 시점:
+         - workflow_dispatch: 수동 트리거 (target_branch 입력, 기본: main).
+         - pull_request: main 병합 시 (release/, hotfix/ 접두사 브랜치).
+         - workflow_call: 다른 워크플로우에서 호출 (deploy-script 필수, target-branch 선택).
+    * 기능: 빌드, Docker 이미지 빌드 & ECR 푸시, 원격 서버 배포 스크립트 실행 (macOS 러너).
+    * 목적: 2.0 서비스를 위한 자동 빌드 및 배포 파이프라인.
+    * 필수 시크릿: REPO_NAME, ACCESS_KEY, SECRET_KEY, INSTANCE_IP, INSTANCE_USERNAME, INSTANCE_KEY, SSH_PORT.
+    * 사용 방법:
+         - 수동: workflow_dispatch 시 target_branch 설정.
+         - 자동: release/ 또는 hotfix/ 브랜치 main 병합 시.
+         - 호출: workflow_call 시 deploy-script 경로 입력.
+    * 주의사항: 대상 서버 aws CLI, docker 필요. macOS ss 명령어 관련 문제 해결 (스크립트 내 자동 수정).
