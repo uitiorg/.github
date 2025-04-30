@@ -428,7 +428,7 @@ potential-bugs:
       - '*.CanIgnoreReturnValue'
     ignoreFunctionCall: []
   ImplicitDefaultLocale:
-    active: true
+    active: false
   ImplicitUnitReturnType:
     active: false
     allowExplicitReturnType: true
