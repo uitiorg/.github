@@ -30,6 +30,73 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Check out the immutable R2 verifier client
+        uses: actions/checkout@v4
+        with:
+          repository: uitiorg/.github
+          ref: caeb8f30e22ab48b79ee38e48a213bfdc6350ae5
+          path: .r2-transport
+          persist-credentials: false
+
+      - name: Prepare exact-run R2 verification and check missing reports
+        env:
+          CI_ARTIFACT_BROKER_URL: ${{ vars.CI_ARTIFACT_BROKER_URL }}
+        shell: bash
+        run: |
+          VERIFY_DIR="$RUNNER_TEMP/r2-jacoco-verifier-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir "$VERIFY_DIR"
+          cat > "$VERIFY_DIR/verify.py" <<'PYTHON'
+          """Verify original JaCoCo/report bytes through this run's existing R2 slots."""
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0,str(Path('.r2-transport/actions/ci-artifact').resolve()))
+          from ci_artifact import HTTPStore, context, prefix, publish, read_bundle, restore, select
+
+          def expect(call,kind,text=None):
+              try:call()
+              except kind as error:
+                  if text and text not in str(error):raise AssertionError('Unexpected error classification') from error
+              else:raise AssertionError('Invalid evidence accepted')
+
+          def run(mode,name=None):
+              e=os.environ
+              workflow=e['GITHUB_WORKFLOW_REF'].split('/.github/workflows/',1)[1].split('@',1)[0]
+              c=context(e['GITHUB_REPOSITORY'],workflow,e['GITHUB_RUN_ID'],e['GITHUB_RUN_ATTEMPT'],'jacoco-build',name or 'jacoco-report',e['GITHUB_SHA'])
+              s=HTTPStore(e['CI_ARTIFACT_BROKER_URL'])
+              if mode=='prepare':
+                  for slot in ('reports','jacoco-report'):expect(lambda:read_bundle(s,{**c,'name':slot}),RuntimeError,'HTTP 404')
+                  print('Both expected JaCoCo/report slots absent before production: HTTP 404')
+                  return
+              patterns={'reports':['**/build/reports','**/build/test-results'],'jacoco-report':['**/build/reports/jacoco']}[name]
+              files=select('.',patterns)
+              dest=Path(e['RUNNER_TEMP'])/f'r2-jacoco-restored-{c["run_id"]}-{c["run_attempt"]}'/name
+              mh=restore(s,c,dest)
+              if {p.relative_to(dest).as_posix():p.read_bytes() for p in dest.rglob('*') if p.is_file()}!=files:raise ValueError('Producer/consumer file set differs')
+              if publish(s,files,c,90)!=mh:raise ValueError('Retry changed manifest')
+              expect(lambda:publish(s,{'conflict.txt':b'conflict'},c,90),RuntimeError,'HTTP 409')
+              expect(lambda:read_bundle(s,{**c,'source_sha':'f'*40}),ValueError)
+              expect(lambda:read_bundle(s,c,'0'*64),ValueError)
+              base=prefix(c);saved={f:s.get(base+'/'+f) for f in ['payload.zip','manifest.json','complete.json']}
+              class Snapshot:
+                  def __init__(self,changes):self.data={**saved,**changes}
+                  def get(self,key):
+                      data=self.data[key.rsplit('/',1)[-1]]
+                      if data is None:raise FileNotFoundError('Missing completion')
+                      return data
+              expect(lambda:read_bundle(Snapshot({'payload.zip':saved['payload.zip']+b'corrupt'}),c),ValueError)
+              expect(lambda:read_bundle(Snapshot({'complete.json':None}),c),FileNotFoundError)
+              denied=[{'repository':'uitiorg/frontend_onboarding'},{'run_id':str(int(c['run_id'])+1)},{'run_attempt':str(int(c['run_attempt'])+1)}]
+              if int(c['run_attempt'])>1:denied.append({'run_attempt':str(int(c['run_attempt'])-1)})
+              for change in denied:expect(lambda:read_bundle(s,{**c,**change}),RuntimeError,'HTTP 403')
+              if {f:s.get(base+'/'+f) for f in saved}!=saved:raise ValueError('Remote evidence changed')
+              receipt={'result':'PASS','context':c,'files':len(files),'manifest_sha256':mh,'checks':['exact producer/restore bytes','missing 404','immutable retry/409','wrong source/manifest','local corruption/missing completion','cross repository/run/attempt 403']}
+              print(json.dumps(receipt,sort_keys=True))
+              with open(e['GITHUB_STEP_SUMMARY'],'a') as f:f.write(f'Private R2 {name}: **PASS**, {len(files)} files, manifest `{mh}`.\n')
+
+          if __name__=='__main__':run(*sys.argv[1:])
+          PYTHON
+          python3 -B "$VERIFY_DIR/verify.py" prepare
+
       - name: Set up JDK
         uses: actions/setup-java@v3
         with:
@@ -54,6 +121,7 @@ jobs:
           fi
 
       - name: Store error reports
+        id: r2-error-report
         if: ${{ failure() }}
         uses: uitiorg/.github/actions/ci-artifact@caeb8f30e22ab48b79ee38e48a213bfdc6350ae5
         with:
@@ -67,6 +135,12 @@ jobs:
             **/build/test-results
           retention-days: "90"
 
+      - name: Restore error evidence and verify boundaries
+        if: always() && steps.r2-error-report.outcome == 'success'
+        env:
+          CI_ARTIFACT_BROKER_URL: ${{ vars.CI_ARTIFACT_BROKER_URL }}
+        run: python3 -B "$RUNNER_TEMP/r2-jacoco-verifier-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/verify.py" verify reports
+
       - name: Upload Jacoco coverage report
         uses: uitiorg/.github/actions/ci-artifact@caeb8f30e22ab48b79ee38e48a213bfdc6350ae5
         with:
@@ -77,6 +151,11 @@ jobs:
           source-sha: "${{ github.sha }}"
           paths: "**/build/reports/jacoco"
           retention-days: "90"
+
+      - name: Restore coverage and verify boundaries before reporting
+        env:
+          CI_ARTIFACT_BROKER_URL: ${{ vars.CI_ARTIFACT_BROKER_URL }}
+        run: python3 -B "$RUNNER_TEMP/r2-jacoco-verifier-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/verify.py" verify jacoco-report
 
       - name: Jacoco Report to PR
         id: jacoco
