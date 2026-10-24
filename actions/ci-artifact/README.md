@@ -33,8 +33,9 @@ reviewed multipart design; they do not silently fall back to GitHub. Retention
 is recorded in manifests only. No lifecycle deletion has been configured;
 operational retention and protection exemptions need approval before rollout.
 
-Validation: `python3 -B -m unittest discover -s transport -p 'test_*.py'`
-and `node --test transport/worker.test.mjs`.
+Validation from the repository root:
+`python3 -B -m unittest discover -s actions/ci-artifact -p 'test_*.py'`
+and `node --test actions/ci-artifact/worker.test.mjs`.
 
 This is implementation preparation, not completed CI migration. Account
 monthly request usage, broker deployment/auth policy, a real small-workflow
