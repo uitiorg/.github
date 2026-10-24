@@ -1,0 +1,12 @@
+{
+  "uitiorg/.github": {
+    "id": "959680003",
+    "workflows": {
+      "ci-artifact-contract.yml": {
+        "events": ["pull_request", "workflow_dispatch"],
+        "refs": ["refs/heads/codex/r2-artifact-transport-20261024", "refs/heads/main"],
+        "slots": {"smoke": ["smoke", "missing"]}
+      }
+    }
+  }
+}
