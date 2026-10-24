@@ -51,12 +51,27 @@ export function authorize(claims, key, policy, method) {
   return {repository,workflow,run_id:run,run_attempt:attempt,job,name,file};
 }
 
+export function readPolicy(env) {
+  // Cloudflare limits each text binding to 5 KiB. Split by repository, never
+  // merge duplicate repository rules or silently override an existing scope.
+  const policy = Object.create(null);
+  for (const name of ['ALLOWLIST', 'ALLOWLIST_2']) {
+    const part = JSON.parse(env[name] || '{}');
+    if (!part || typeof part !== 'object' || Array.isArray(part)) throw new Error('policy');
+    for (const [repository, rule] of Object.entries(part)) {
+      if (Object.hasOwn(policy, repository)) throw new Error('duplicate repository policy');
+      policy[repository] = rule;
+    }
+  }
+  return policy;
+}
+
 export async function serve(request, env, claims) {
   const url = new URL(request.url);
   if (url.search || url.pathname.includes('%')) return new Response('invalid path',{status:400});
   const key=url.pathname.slice(1);
   let identity;
-  try {identity=authorize(claims,key,JSON.parse(env.ALLOWLIST || '{}'),request.method);}
+  try {identity=authorize(claims,key,readPolicy(env),request.method);}
   catch {return new Response('forbidden',{status:403});}
   if (request.method === 'GET') {
     const value=await env.ARTIFACTS.get(key);

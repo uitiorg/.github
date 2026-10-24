@@ -35,6 +35,11 @@ on:
 
 jobs:
   build:
+    # This exact CI migration PR must not publish an application image.
+    if: >-
+      github.repository != 'uitiorg/.github' ||
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.ref != 'codex/r2-artifact-transport-20261024'
     name: Build
     runs-on: [self-hosted, macOS, ARM64, Primary]
     steps:

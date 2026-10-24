@@ -1,12 +1,23 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {authorize,serve,verifyJWT} from './worker.mjs';
+import {authorize,serve,verifyJWT,readPolicy} from './worker.mjs';
 
 const claims={repository:'uitiorg/btalk2.1_backend',repository_id:'975204945',repository_owner_id:'117706611',workflow_ref:'uitiorg/btalk2.1_backend/.github/workflows/smoke.yml@refs/heads/develop',event_name:'workflow_dispatch',ref:'refs/heads/develop',run_id:'123',run_attempt:'1'};
 const policy={'uitiorg/btalk2.1_backend':{id:'975204945',workflows:{'smoke.yml':{events:['workflow_dispatch'],refs:['refs/heads/develop'],slots:{test:['evidence']}}}}};
 const prefix='v1/uitiorg/btalk2.1_backend/smoke.yml/123/1/test/evidence/';
 const hash=async b=>Buffer.from(await crypto.subtle.digest('SHA-256',b)).toString('hex');
 const makeEnv=()=>({ALLOWLIST:JSON.stringify(policy),ARTIFACTS:new Store()});
+test('split repository bindings preserve exact policy without overrides',()=>{
+ const combined=readPolicy({ALLOWLIST:JSON.stringify(policy),ALLOWLIST_2:JSON.stringify({'uitiorg/second':{id:'2',workflows:{}}})});
+ assert.deepEqual(combined['uitiorg/btalk2.1_backend'],policy['uitiorg/btalk2.1_backend']);
+ assert.deepEqual(combined['uitiorg/second'],{id:'2',workflows:{}});
+ assert.throws(()=>readPolicy({ALLOWLIST:JSON.stringify(policy),ALLOWLIST_2:JSON.stringify(policy)}));
+ for(const value of ['[]','null','broken'])assert.throws(()=>readPolicy({ALLOWLIST:value}));
+});
+test('invalid split policy fails closed before reading storage',async()=>{
+ const env={ALLOWLIST:JSON.stringify(policy),ALLOWLIST_2:JSON.stringify(policy),ARTIFACTS:{get(){assert.fail('must not access storage');}}};
+ assert.equal((await serve(new Request('https://broker.invalid/'+prefix+'payload.zip'),env,claims)).status,403);
+});
 class Store {
  map=new Map();
  async head(k){const v=this.map.get(k);return v?{size:v.data.byteLength,customMetadata:v.customMetadata}:null;}
