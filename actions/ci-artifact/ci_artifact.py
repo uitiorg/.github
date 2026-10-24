@@ -186,6 +186,20 @@ def restore(store,c,destination,expected_manifest_sha=None):
             with p.open('xb') as f:f.write(data)
     return mh
 
+def restore_set(store,base_context,bundles,destination):
+    if not isinstance(bundles,list) or not bundles:raise ValueError('expected bundle list is empty')
+    seen=set();results=[]
+    for item in bundles:
+        if set(item)!= {'job','name','destination'}:raise ValueError('invalid expected bundle row')
+        identity=(item['job'],item['name'])
+        if identity in seen:raise ValueError('duplicate expected bundle')
+        seen.add(identity)
+        target=Path(destination)
+        if item['destination']:target=target/safe_path(item['destination'])
+        c={**base_context,'job':item['job'],'name':item['name']}
+        results.append(restore(store,c,target))
+    return results
+
 def main():
     p=argparse.ArgumentParser();p.add_argument('operation',choices=['upload','download'])
     p.add_argument('--broker',default=os.getenv('CI_ARTIFACT_BROKER_URL'))

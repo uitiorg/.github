@@ -1,6 +1,6 @@
 import copy,io,json,os,tempfile,unittest,zipfile
 from pathlib import Path
-from ci_artifact import context,prefix,publish,restore,read_bundle,pack,select,FileStore,canonical,digest
+from ci_artifact import context,prefix,publish,restore,restore_set,read_bundle,pack,select,FileStore,canonical,digest
 
 class BundleTests(unittest.TestCase):
  def setUp(self):
@@ -62,5 +62,17 @@ class BundleTests(unittest.TestCase):
  def test_deterministic(self):self.assertEqual(pack(self.files,self.c,3),pack(dict(reversed(list(self.files.items()))),self.c,3))
  def test_empty(self):
   with self.assertRaises(ValueError):pack({},self.c,3)
+ def test_complete_expected_set(self):
+  self.publish();c={**self.c,'job':'test2','name':'evidence2'};publish(self.s,self.files,c,3)
+  rows=[dict(job='test',name='evidence',destination='first'),dict(job='test2',name='evidence2',destination='second')]
+  self.assertEqual(len(restore_set(self.s,self.c,rows,self.root/'out')),2)
+ def test_expected_set_missing(self):
+  self.publish();rows=[dict(job='test',name='evidence',destination=''),dict(job='missing',name='missing',destination='')]
+  with self.assertRaises(FileNotFoundError):restore_set(self.s,self.c,rows,self.root/'out')
+ def test_expected_set_duplicate(self):
+  self.publish();row=dict(job='test',name='evidence',destination='')
+  with self.assertRaises(ValueError):restore_set(self.s,self.c,[row,row],self.root/'out')
+ def test_expected_set_empty(self):
+  with self.assertRaises(ValueError):restore_set(self.s,self.c,[],self.root/'out')
 
 if __name__=='__main__':unittest.main()

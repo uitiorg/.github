@@ -2,7 +2,7 @@ name: Private R2 artifact
 description: Strict immutable CI bundles using a run-scoped GitHub OIDC broker
 inputs:
   operation:
-    description: upload or download
+    description: upload, download, or download-set
     required: true
   broker:
     description: Approved HTTPS broker origin
@@ -28,6 +28,8 @@ inputs:
     default: '7'
   manifest-sha:
     description: Expected producer manifest SHA256, when available
+  bundle-list:
+    description: Local JSON file enumerating every expected job/name/destination
 outputs:
   manifest_sha256:
     description: SHA256 of verified manifest
@@ -49,4 +51,5 @@ runs:
         TRANSPORT_DESTINATION: ${{ inputs.destination }}
         TRANSPORT_RETENTION: ${{ inputs.retention-days }}
         TRANSPORT_MANIFEST_SHA: ${{ inputs.manifest-sha }}
+        TRANSPORT_BUNDLE_LIST: ${{ inputs.bundle-list }}
       run: python3 -B "$TRANSPORT_ACTION_PATH/action_entry.py"
