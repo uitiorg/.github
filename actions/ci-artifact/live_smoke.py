@@ -14,10 +14,15 @@ for name,expected in files.items():assert (dest/name).read_bytes()==expected
 try:publish(s,{'different.txt':b'different'},c,3)
 except RuntimeError as ex:assert 'HTTP 409' in str(ex)
 else:raise AssertionError('overwrite accepted')
-for bad,status in [({**c,'name':'missing'},404),({**c,'run_id':str(int(c['run_id'])+1)},403),({**c,'run_attempt':str(int(c['run_attempt'])+1)},403)]:
+denied=[({**c,'name':'missing'},404),({**c,'run_id':str(int(c['run_id'])+1)},403),({**c,'run_attempt':str(int(c['run_attempt'])+1)},403),({**c,'repository':'uitiorg/legacy-service'},403)]
+if int(c['run_attempt'])>1:denied.append(({**c,'run_attempt':str(int(c['run_attempt'])-1)},403))
+for bad,status in denied:
  try:restore(s,bad,dest/'must-not-exist')
  except RuntimeError as ex:assert f'HTTP {status}' in str(ex),str(ex)
  else:raise AssertionError('missing/unauthorized bundle accepted')
+try:restore(s,{**c,'source_sha':'f'*40},dest/'wrong-source')
+except ValueError:pass
+else:raise AssertionError('wrong expected source accepted')
 with open(e['GITHUB_STEP_SUMMARY'],'a') as f:
  f.write(f'R2 smoke verified upload/restore, immutable retry/conflict, missing and cross-run/attempt denial. Source `{c["source_sha"]}`, run `{c["run_id"]}`, attempt `{c["run_attempt"]}`, manifest `{h}`.\n')
 print('Live R2 smoke PASS; run/attempt and manifest recorded in step summary')
