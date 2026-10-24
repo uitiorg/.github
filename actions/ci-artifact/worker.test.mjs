@@ -39,6 +39,21 @@ for(const [name,key,change] of [
 ])test('denies '+name,()=>assert.throws(()=>authorize({...claims,...change},key+'payload.zip',policy,'PUT')));
 test('denies deletion/listing',()=>{assert.throws(()=>authorize(claims,prefix+'payload.zip',policy,'DELETE'));assert.throws(()=>authorize(claims,prefix,policy,'GET'));});
 test('default empty policy denies',()=>assert.throws(()=>authorize(claims,prefix+'payload.zip',{},'PUT')));
+test('optional PR base restrictions reject wrong and missing signed base refs',()=>{
+ const p=structuredClone(policy),w=p[claims.repository].workflows['smoke.yml'];
+ w.events=['pull_request'];w.pull_request_base_refs=['develop','main'];
+ const c={...claims,event_name:'pull_request',ref:'refs/pull/42/merge',base_ref:'develop'};
+ assert.equal(authorize(c,prefix+'payload.zip',p,'PUT').run_id,'123');
+ for(const change of [{base_ref:'release/other'},{base_ref:undefined},{ref:'refs/heads/develop'}])
+  assert.throws(()=>authorize({...c,...change},prefix+'payload.zip',p,'PUT'));
+});
+test('optional reusable identity must match the exact approved workflow commit',()=>{
+ const p=structuredClone(policy),w=p[claims.repository].workflows['smoke.yml'];
+ const ref='uitiorg/.github/.github/workflows/jacoco-rule.yml@'+'a'.repeat(40);w.reusable_refs=[ref];
+ assert.equal(authorize({...claims,job_workflow_ref:ref},prefix+'payload.zip',p,'PUT').run_id,'123');
+ for(const value of [undefined,ref.replace('a'.repeat(40),'b'.repeat(40)),ref.replace('jacoco-rule','other')])
+  assert.throws(()=>authorize({...claims,job_workflow_ref:value},prefix+'payload.zip',p,'PUT'));
+});
 test('conditional writes are idempotent and immutable',async()=>{
  const e=makeEnv();assert.equal((await put(e,'payload.zip','abc')).status,200);
  assert.equal((await put(e,'payload.zip','abc')).status,200);

@@ -38,6 +38,10 @@ export function authorize(claims, key, policy, method) {
   if (!approved || claims.repository !== repository || String(claims.repository_id) !== String(approved.id) || String(claims.repository_owner_id) !== '117706611') throw new Error('repository');
   if (!workflowPolicy || claims.workflow_ref?.split('@')[0] !== repository+'/.github/workflows/'+workflow || !workflowPolicy.events.includes(claims.event_name)) throw new Error('workflow');
   if (claims.event_name !== 'pull_request' && !workflowPolicy.refs.includes(claims.ref)) throw new Error('ref');
+  if (claims.event_name === 'pull_request' && workflowPolicy.pull_request_base_refs &&
+      (!/^refs\/pull\/[1-9][0-9]*\/merge$/.test(claims.ref || '') ||
+       !workflowPolicy.pull_request_base_refs.includes(claims.base_ref))) throw new Error('PR base ref');
+  if (workflowPolicy.reusable_refs && !workflowPolicy.reusable_refs.includes(claims.job_workflow_ref)) throw new Error('reusable workflow');
   // A signed run identity scopes *all* callers, including modified PR code, to
   // this run and attempt. It never grants access to older or other repo data.
   if (String(claims.run_id) !== run || String(claims.run_attempt) !== attempt || !/^[1-9][0-9]*$/.test(run) || !/^[1-9][0-9]*$/.test(attempt)) throw new Error('run');

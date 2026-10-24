@@ -6,6 +6,9 @@ The broker validates the GitHub signature, issuer, audience, time, numeric
 repository identity, workflow path, event/ref, run and attempt. Its default
 allowlist is empty and its public routes are disabled. Deploying it, enabling a
 route and installing its explicit workflow/slot policy require approval.
+Policies may additionally require signed PR base branches and an exact
+`job_workflow_ref` commit for a reusable workflow. These restrictions do not
+authorize a new repository or workflow by themselves.
 
 Each approved job/artifact slot has only `payload.zip`, `manifest.json` and
 `complete.json`, created with R2's conditional put. Writers may only write

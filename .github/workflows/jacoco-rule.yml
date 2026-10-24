@@ -22,6 +22,10 @@ permissions:
 
 jobs:
   build:
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v3
@@ -51,18 +55,28 @@ jobs:
 
       - name: Store error reports
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: uitiorg/.github/actions/ci-artifact@caeb8f30e22ab48b79ee38e48a213bfdc6350ae5
         with:
-          name: reports
-          path: |
-            **/build/reports/
-            **/build/test-results/
+          operation: "upload"
+          broker: "${{ vars.CI_ARTIFACT_BROKER_URL }}"
+          job: "jacoco-build"
+          name: "reports"
+          source-sha: "${{ github.sha }}"
+          paths: |
+            **/build/reports
+            **/build/test-results
+          retention-days: "90"
 
       - name: Upload Jacoco coverage report
-        uses: actions/upload-artifact@v4
+        uses: uitiorg/.github/actions/ci-artifact@caeb8f30e22ab48b79ee38e48a213bfdc6350ae5
         with:
-          name: jacoco-report
-          path: '**/build/reports/jacoco'
+          operation: "upload"
+          broker: "${{ vars.CI_ARTIFACT_BROKER_URL }}"
+          job: "jacoco-build"
+          name: "jacoco-report"
+          source-sha: "${{ github.sha }}"
+          paths: "**/build/reports/jacoco"
+          retention-days: "90"
 
       - name: Jacoco Report to PR
         id: jacoco
