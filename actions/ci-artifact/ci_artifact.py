@@ -115,7 +115,7 @@ class HTTPStore:
         with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)['value']
     def request(self,key,data=None):
         safe_path(key)
-        headers={'Authorization':'Bearer '+self.token()}
+        headers={'Authorization':'Bearer '+self.token(),'User-Agent':'uitiorg-ci-artifact/1.0'}
         if data is not None: headers.update({'Content-Type':'application/octet-stream','X-Content-SHA256':digest(data)})
         req=urllib.request.Request(self.url+'/'+key, data=data, headers=headers,method='PUT' if data is not None else 'GET')
         try:
