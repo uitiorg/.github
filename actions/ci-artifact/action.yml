@@ -1,0 +1,55 @@
+name: Private R2 artifact
+description: Strict immutable CI bundles using a run-scoped GitHub OIDC broker
+inputs:
+  operation:
+    description: upload, download, or download-set
+    required: true
+  broker:
+    description: Approved HTTPS broker origin
+    required: true
+  job:
+    description: Stable producer job or matrix slot
+    required: true
+  name:
+    description: Exact artifact name
+    required: true
+  source-sha:
+    description: Exact expected source commit, including baseline/candidate distinction
+    required: true
+  root:
+    description: Upload root; names in the bundle are relative to this root
+    default: '.'
+  paths:
+    description: Newline-separated required paths or globs relative to root
+  destination:
+    description: Download destination
+  retention-days:
+    description: Requested retention recorded in the manifest
+    default: '7'
+  manifest-sha:
+    description: Expected producer manifest SHA256, when available
+  bundle-list:
+    description: Local JSON file enumerating every expected job/name/destination
+outputs:
+  manifest_sha256:
+    description: SHA256 of verified manifest
+    value: ${{ steps.transfer.outputs.manifest_sha256 }}
+runs:
+  using: composite
+  steps:
+    - id: transfer
+      shell: bash
+      env:
+        TRANSPORT_ACTION_PATH: ${{ github.action_path }}
+        TRANSPORT_OPERATION: ${{ inputs.operation }}
+        TRANSPORT_BROKER: ${{ inputs.broker }}
+        TRANSPORT_JOB: ${{ inputs.job }}
+        TRANSPORT_NAME: ${{ inputs.name }}
+        TRANSPORT_SOURCE_SHA: ${{ inputs.source-sha }}
+        TRANSPORT_ROOT: ${{ inputs.root }}
+        TRANSPORT_PATHS: ${{ inputs.paths }}
+        TRANSPORT_DESTINATION: ${{ inputs.destination }}
+        TRANSPORT_RETENTION: ${{ inputs.retention-days }}
+        TRANSPORT_MANIFEST_SHA: ${{ inputs.manifest-sha }}
+        TRANSPORT_BUNDLE_LIST: ${{ inputs.bundle-list }}
+      run: python3 -B "$TRANSPORT_ACTION_PATH/action_entry.py"

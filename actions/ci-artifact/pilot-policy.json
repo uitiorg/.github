@@ -1,0 +1,12 @@
+{
+  "uitiorg/btalk2.1_backend": {
+    "id": "975204945",
+    "workflows": {
+      "ci-artifact-contract.yml": {
+        "events": ["pull_request", "workflow_dispatch"],
+        "refs": ["refs/heads/codex/r2-artifact-migration-20261024", "refs/heads/develop"],
+        "slots": {"smoke": ["smoke", "missing"]}
+      }
+    }
+  }
+}

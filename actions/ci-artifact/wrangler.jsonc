@@ -1,0 +1,10 @@
+{
+  "name": "uitiorg-ci-artifact-broker",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-24",
+  "account_id": "a5bd0aa1f6405e8ef5369e5d6aef3b96",
+  "workers_dev": false,
+  "preview_urls": false,
+  "r2_buckets": [{"binding":"ARTIFACTS","bucket_name":"uitiorg-ci-artifacts"}],
+  "vars": {"ALLOWLIST":"{}"}
+}
