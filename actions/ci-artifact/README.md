@@ -40,7 +40,10 @@ Validation from the repository root:
 `python3 -B -m unittest discover -s actions/ci-artifact -p 'test_*.py'`
 and `node --test actions/ci-artifact/worker.test.mjs`.
 
-This is implementation preparation, not completed CI migration. Account
-monthly request usage, broker deployment/auth policy, a real small-workflow
-upload/download/missing/rerun/permission-boundary test, exact final SHA CI,
-producer/consumer rollout and merge approval remain release gates.
+Transport implementation alone does not establish completed CI migration.
+Each caller needs an approved broker policy, successful producer/consumer
+verification for its final candidate, missing/integrity/rerun/permission-boundary
+checks and application to its intended branch. Preserve existing deployment
+triggers; migration branches do not receive special deployment exclusions.
+Account monthly request usage and billing must be assessed separately from
+transport correctness; a free-tier estimate is not a confirmed zero-cost bill.
