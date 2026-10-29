@@ -6,6 +6,7 @@ Payload bytes, the manifest, and completion are separate conditional creations.
 """
 import argparse
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import glob
 import hashlib
 import http.client
@@ -28,6 +29,28 @@ MAX_BYTES = 90 * 1024 * 1024
 MAX_EXPANDED = 1024 * 1024 * 1024
 SEGMENT = re.compile(r"[A-Za-z0-9_.-]{1,180}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+RAY = re.compile(r"[0-9a-f]{16,32}-[A-Z]{3}\Z")
+REQUEST_ID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\Z")
+
+def report_http_failure(operation,kind,error,started,attempt):
+    # Diagnostics must not change the exception, retry decision or response.
+    try:
+        if operation not in ('TOKEN','GET','PUT') or kind not in ('payload','manifest','completion','other'):
+            return
+        if type(error.code) is not int or not 100 <= error.code <= 599:
+            return
+        record={'event':'artifact_http_failure','operation':operation,'object_kind':kind,
+                'status':error.code,'utc':datetime.now(timezone.utc).isoformat(),
+                'elapsed_ms':max(0,int((time.monotonic()-started)*1000)), 'attempt':attempt}
+        headers=error.headers
+        if headers is not None:
+            ray=headers.get('CF-Ray')
+            request_id=headers.get('X-Request-ID')
+            if isinstance(ray,str) and RAY.fullmatch(ray):record['cf_ray']=ray
+            if isinstance(request_id,str) and REQUEST_ID.fullmatch(request_id):record['request_id']=request_id
+        print(json.dumps(record,sort_keys=True),file=sys.stderr)
+    except (_RequestDeadline, Exception):
+        pass
 
 class _RequestDeadline(BaseException):
     pass
@@ -150,16 +173,29 @@ class HTTPStore:
             return self._request(key,data)
     def _request(self,key,data):
         deadline=time.monotonic()+180
+        kind={'payload.zip':'payload','manifest.json':'manifest','complete.json':'completion'}.get(key.rsplit('/',1)[-1],'other')
+        operation='PUT' if data is not None else 'GET'
         for attempt in range(1,4):
             # Token acquisition failures are not broker failures and are not retried.
             remaining=deadline-time.monotonic()
             if remaining<=0: raise RuntimeError('artifact request deadline exceeded; no fallback')
-            headers={'Authorization':'Bearer '+self.token(timeout=min(30,remaining)),'User-Agent':'uitiorg-ci-artifact/1.0'}
+            started=time.monotonic()
+            try:
+                token=self.token(timeout=min(30,remaining))
+            except urllib.error.HTTPError as e:
+                code=e.code
+                e.close()
+                report_http_failure('TOKEN',kind,e,started,attempt)
+                # Keep the HTTP error type/status and failure exit while not
+                # echoing an untrusted server reason, URL, headers or body.
+                raise urllib.error.HTTPError('',code,'OIDC request failed',{},None) from None
+            headers={'Authorization':'Bearer '+token,'User-Agent':'uitiorg-ci-artifact/1.0'}
             if data is not None: headers.update({'Content-Type':'application/octet-stream','X-Content-SHA256':digest(data)})
             req=urllib.request.Request(self.url+'/'+key, data=data, headers=headers,method='PUT' if data is not None else 'GET')
             try:
                 remaining=deadline-time.monotonic()
                 if remaining<=0: raise TimeoutError('artifact request deadline exceeded')
+                started=time.monotonic()
                 with urllib.request.urlopen(req,timeout=remaining) as r:
                     value=r.read(MAX_BYTES+1)
                     if len(value)>MAX_BYTES:raise ValueError('response exceeds limit')
@@ -167,6 +203,7 @@ class HTTPStore:
             except urllib.error.HTTPError as e:
                 code=e.code
                 e.close()
+                report_http_failure(operation,kind,e,started,attempt)
                 if code not in (500,502,503,504):
                     raise RuntimeError(f'artifact broker HTTP {code}; no fallback') from None
                 classification=f'HTTP {code}'

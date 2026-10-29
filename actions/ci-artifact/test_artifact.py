@@ -1,9 +1,11 @@
 import copy,io,json,os,tempfile,unittest,zipfile
 import urllib.error
 import signal,ssl,time
+import subprocess,sys
+from contextlib import redirect_stderr
 from unittest.mock import patch
 from pathlib import Path
-from ci_artifact import context,prefix,publish,restore,restore_set,read_bundle,pack,select,FileStore,HTTPStore,canonical,digest,request_deadline
+from ci_artifact import context,prefix,publish,restore,restore_set,read_bundle,pack,select,FileStore,HTTPStore,canonical,digest,request_deadline,_RequestDeadline
 
 class HTTPRetryTests(unittest.TestCase):
  def setUp(self):
@@ -56,9 +58,45 @@ class HTTPRetryTests(unittest.TestCase):
    with self.assertRaises(urllib.error.URLError):self.store.get(self.key)
    self.assertEqual(send.call_count,1)
  def test_deadline_no_more_retries(self):
-  with patch('ci_artifact.time.monotonic',side_effect=[0,0,0,179.5]),patch('ci_artifact.urllib.request.urlopen',side_effect=self.error(502)) as send:
+  with patch('ci_artifact.time.monotonic',side_effect=[0,0,0,0,0,0,179.5]),patch('ci_artifact.urllib.request.urlopen',side_effect=self.error(502)) as send:
    with self.assertRaisesRegex(RuntimeError,'HTTP 502'):self.store.get(self.key)
    self.assertEqual(send.call_count,1)
+ def test_http_log_allowlist_and_no_sensitive_values(self):
+  err=urllib.error.HTTPError('https://secret.invalid/path?token=private',401,'private-body',{
+   'CF-Ray':'1234567890abcdef-ICN','X-Request-ID':'12345678-1234-4234-8234-123456789abc',
+   'Authorization':'Bearer synthetic-secret'},None)
+  out=io.StringIO()
+  with patch('ci_artifact.urllib.request.urlopen',side_effect=err),redirect_stderr(out):
+   with self.assertRaisesRegex(RuntimeError,'HTTP 401'):self.store.get(self.key)
+  record=json.loads(out.getvalue());self.assertEqual(record['operation'],'GET');self.assertEqual(record['object_kind'],'payload')
+  self.assertEqual(record['status'],401);self.assertEqual(record['cf_ray'],'1234567890abcdef-ICN')
+  self.assertEqual(record['request_id'],'12345678-1234-4234-8234-123456789abc')
+  self.assertNotIn('private',out.getvalue());self.assertNotIn('synthetic-secret',out.getvalue());self.assertNotIn(self.key,out.getvalue())
+ def test_malformed_ids_omitted_and_logging_error_does_not_change_exit(self):
+  err=urllib.error.HTTPError('https://example.invalid',403,'',{'CF-Ray':'1234567890abcdef-ICN\ninjected','X-Request-ID':'A'*200},None)
+  out=io.StringIO()
+  with patch('ci_artifact.urllib.request.urlopen',side_effect=err),redirect_stderr(out):
+   with self.assertRaisesRegex(RuntimeError,'HTTP 403'):self.store.get(self.key)
+  record=json.loads(out.getvalue());self.assertNotIn('cf_ray',record);self.assertNotIn('request_id',record)
+  with patch('ci_artifact.urllib.request.urlopen',side_effect=self.error(409)) as send,patch('ci_artifact.print',side_effect=OSError('private diagnostic error')):
+   with self.assertRaisesRegex(RuntimeError,'HTTP 409'):self.store.put(self.key,b'bytes')
+   self.assertEqual(send.call_count,1)
+ def test_oidc_http_error_is_logged_and_reraised_without_retry(self):
+  error=self.error(401);out=io.StringIO()
+  with patch.object(self.store,'token',side_effect=error) as token,redirect_stderr(out):
+   with self.assertRaises(urllib.error.HTTPError) as caught:self.store.get(self.key)
+  self.assertEqual(caught.exception.code,401);self.assertEqual(caught.exception.reason,'OIDC request failed');self.assertEqual(token.call_count,1)
+  record=json.loads(out.getvalue());self.assertEqual((record['operation'],record['object_kind'],record['status']),('TOKEN','payload',401))
+ def test_deadline_during_diagnostics_preserves_primary_http_failure(self):
+  err=self.error(401)
+  with patch.object(err,'close',wraps=err.close) as closed,patch('ci_artifact.urllib.request.urlopen',side_effect=err) as send,patch('ci_artifact.print',side_effect=_RequestDeadline()):
+   with self.assertRaisesRegex(RuntimeError,'HTTP 401'):self.store.get(self.key)
+   self.assertEqual(send.call_count,1);closed.assert_called_once()
+ def test_oidc_traceback_does_not_echo_untrusted_reason_or_url(self):
+  script="""import urllib.error\nfrom unittest.mock import patch\nfrom ci_artifact import HTTPStore\ns=HTTPStore('https://example.invalid')\ne=urllib.error.HTTPError('https://synthetic-secret.invalid/path?key=synthetic-secret',401,'synthetic-secret',{},None)\nwith patch.object(s,'token',side_effect=e):s.get('v1/o/r/w/1/1/j/n/payload.zip')\n"""
+  result=subprocess.run([sys.executable,'-c',script],capture_output=True,text=True,timeout=5)
+  self.assertNotEqual(result.returncode,0);self.assertIn('HTTP Error 401: OIDC request failed',result.stderr)
+  self.assertNotIn('synthetic-secret',result.stderr);self.assertNotIn('https://',result.stderr)
  def test_slow_read_stops_at_deadline_and_restores_alarm(self):
   real_sleep=self.real_sleep
   class SlowResponse:
