@@ -5,15 +5,20 @@ HTTPStore requires a GitHub OIDC broker; FileStore is for hermetic contract test
 Payload bytes, the manifest, and completion are separate conditional creations.
 """
 import argparse
+from contextlib import contextmanager
 import glob
 import hashlib
+import http.client
 import io
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import signal
 import stat
+import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +28,32 @@ MAX_BYTES = 90 * 1024 * 1024
 MAX_EXPANDED = 1024 * 1024 * 1024
 SEGMENT = re.compile(r"[A-Za-z0-9_.-]{1,180}\Z")
 SHA = re.compile(r"[0-9a-f]{40}\Z")
+
+class _RequestDeadline(BaseException):
+    pass
+
+@contextmanager
+def request_deadline(seconds):
+    # This synchronous CLI runs on POSIX main threads. Never take ownership of
+    # another caller's alarm; unsupported contexts fail rather than run unbounded.
+    try:
+        previous=signal.getsignal(signal.SIGALRM)
+        timer=signal.getitimer(signal.ITIMER_REAL)
+        if timer != (0.0,0.0) or previous not in (signal.SIG_DFL,signal.SIG_IGN):
+            raise RuntimeError('artifact request timer unavailable; no fallback')
+        def expired(signum,frame): raise _RequestDeadline()
+        signal.signal(signal.SIGALRM,expired)
+    except (AttributeError,ValueError):
+        raise RuntimeError('artifact request timer unavailable; no fallback') from None
+    try:
+        signal.setitimer(signal.ITIMER_REAL,seconds)
+        try:
+            yield
+        except _RequestDeadline:
+            raise RuntimeError('artifact request deadline exceeded; no fallback') from None
+    finally:
+        signal.setitimer(signal.ITIMER_REAL,0)
+        signal.signal(signal.SIGALRM,previous)
 
 def digest(data):
     return hashlib.sha256(data).hexdigest()
@@ -108,23 +139,49 @@ class HTTPStore:
         if u.scheme!='https' or not u.hostname or u.username or u.password or u.query or u.fragment:
             raise ValueError('broker must be an HTTPS origin')
         self.url=url.rstrip('/')
-    def token(self):
+    def token(self,timeout=30):
         u=os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']
         u += ('&' if '?' in u else '?') + urllib.parse.urlencode({'audience':'uitiorg-ci-artifacts'})
         req=urllib.request.Request(u,headers={'Authorization':'Bearer '+os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']})
-        with urllib.request.urlopen(req,timeout=30) as r:return json.load(r)['value']
+        with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)['value']
     def request(self,key,data=None):
         safe_path(key)
-        headers={'Authorization':'Bearer '+self.token(),'User-Agent':'uitiorg-ci-artifact/1.0'}
-        if data is not None: headers.update({'Content-Type':'application/octet-stream','X-Content-SHA256':digest(data)})
-        req=urllib.request.Request(self.url+'/'+key, data=data, headers=headers,method='PUT' if data is not None else 'GET')
-        try:
-            with urllib.request.urlopen(req,timeout=180) as r:
-                value=r.read(MAX_BYTES+1)
-                if len(value)>MAX_BYTES:raise ValueError('response exceeds limit')
-                return value
-        except urllib.error.HTTPError as e:
-            raise RuntimeError(f'artifact broker HTTP {e.code}; no fallback') from None
+        with request_deadline(180):
+            return self._request(key,data)
+    def _request(self,key,data):
+        deadline=time.monotonic()+180
+        for attempt in range(1,4):
+            # Token acquisition failures are not broker failures and are not retried.
+            remaining=deadline-time.monotonic()
+            if remaining<=0: raise RuntimeError('artifact request deadline exceeded; no fallback')
+            headers={'Authorization':'Bearer '+self.token(timeout=min(30,remaining)),'User-Agent':'uitiorg-ci-artifact/1.0'}
+            if data is not None: headers.update({'Content-Type':'application/octet-stream','X-Content-SHA256':digest(data)})
+            req=urllib.request.Request(self.url+'/'+key, data=data, headers=headers,method='PUT' if data is not None else 'GET')
+            try:
+                remaining=deadline-time.monotonic()
+                if remaining<=0: raise TimeoutError('artifact request deadline exceeded')
+                with urllib.request.urlopen(req,timeout=remaining) as r:
+                    value=r.read(MAX_BYTES+1)
+                    if len(value)>MAX_BYTES:raise ValueError('response exceeds limit')
+                    return value
+            except urllib.error.HTTPError as e:
+                code=e.code
+                e.close()
+                if code not in (500,502,503,504):
+                    raise RuntimeError(f'artifact broker HTTP {code}; no fallback') from None
+                classification=f'HTTP {code}'
+                failure=RuntimeError(f'artifact broker HTTP {code}; no fallback')
+            except (urllib.error.URLError, ConnectionError, TimeoutError, http.client.IncompleteRead) as e:
+                reason=e.reason if isinstance(e,urllib.error.URLError) else e
+                if not isinstance(reason,(ConnectionResetError,ConnectionAbortedError,BrokenPipeError,TimeoutError,http.client.RemoteDisconnected,http.client.IncompleteRead)):
+                    raise
+                classification='temporary connection error'
+                failure=RuntimeError('artifact broker temporary connection error; no fallback')
+            delay=attempt
+            if attempt==3 or time.monotonic()+delay>=deadline:
+                raise failure from None
+            print(f'artifact broker retry {attempt}/2: {classification}; delay {delay}s',file=sys.stderr)
+            time.sleep(delay)
     def get(self,key):return self.request(key)
     def put(self,key,data):self.request(key,data)
 

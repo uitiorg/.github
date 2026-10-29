@@ -36,6 +36,7 @@ on:
 jobs:
   build:
     name: Build
+    if: github.repository != 'uitiorg/.github' || github.event_name != 'pull_request'
     runs-on: [self-hosted, macOS, ARM64, Primary]
     steps:
       - name: Checkout
